@@ -2,6 +2,8 @@
 
 Turn papers, slide decks, notes, spreadsheets and code into an interactive, drill-down presentation you can learn from one piece at a time.
 
+Repository: https://github.com/regmi-sijan/LearnDeck
+
 ---
 
 ## What is this
@@ -66,7 +68,7 @@ your file or link
 Slides are written the first time you open them and then saved, so going back and forth afterwards is instant.
 
 ```
-GUI_Research/
+LearnDeck/
 ├── start.sh / start.bat   one-step launchers (macOS/Linux, Windows)
 ├── run.py                 starts the server and opens the browser
 ├── requirements.txt       Python dependencies
@@ -95,10 +97,12 @@ GUI_Research/
 ### Start it (macOS / Linux)
 
 ```bash
-cd ~/Desktop/Projects/GUI_Research
-chmod +x start.sh      # first time only
+git clone https://github.com/regmi-sijan/LearnDeck.git
+cd LearnDeck
 ./start.sh
 ```
+
+If you already have the folder (for example `~/Desktop/Projects/LearnDeck`), skip the `git clone` line and just `cd` into it. If the terminal says `permission denied`, run `chmod +x start.sh` once.
 
 The first run creates a virtual environment in `.venv`, installs the dependencies (about a minute) and copies `.env.example` to `.env`. Your browser then opens at **http://127.0.0.1:8765**. Press `Ctrl+C` in the terminal to stop. Later runs start in a few seconds.
 
