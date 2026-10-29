@@ -1,0 +1,21 @@
+# LearnDeck dependencies (Python 3.9+; 3.11 or newer recommended)
+# Install with:  pip install -r requirements.txt
+
+# web server + API
+fastapi>=0.110
+uvicorn[standard]>=0.29
+python-multipart>=0.0.9
+python-dotenv>=1.0
+
+# reading documents
+pymupdf>=1.24          # PDF text, outlines and page images
+python-pptx>=0.6.23    # PowerPoint .pptx
+python-docx>=1.1       # Word .docx
+openpyxl>=3.1          # Excel .xlsx
+beautifulsoup4>=4.12   # web pages (fallback reader)
+trafilatura>=1.8       # web pages (main-article extraction)
+httpx>=0.27            # downloading links
+
+# AI providers (only the one you configure is used)
+anthropic>=0.40        # Claude
+openai>=1.40           # OpenAI or any OpenAI-compatible server

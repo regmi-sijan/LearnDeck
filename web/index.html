@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LearnDeck</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='2' y='2' width='28' height='28' rx='5' fill='%231C2740'/%3E%3Crect x='9' y='9' width='14' height='14' rx='3' fill='none' stroke='%23F3E36B' stroke-width='2.5'/%3E%3Crect x='14' y='14' width='4' height='4' fill='%23F3E36B'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Next:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&family=Literata:ital,opsz,wght@0,7..72,400;0,7..72,600;0,7..72,700;1,7..72,400&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css">
+  <link rel="stylesheet" id="hljs-light" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css">
+  <link rel="stylesheet" id="hljs-dark" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css" disabled>
+  <link rel="stylesheet" href="/styles.css">
+  <script defer src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
+  <script defer src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.6/purify.min.js"></script>
+  <script defer src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+  <script defer src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
+  <script defer src="/app.js"></script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+
+  <!-- ============================ HOME ============================ -->
+  <section id="home" class="view" hidden>
+    <header class="home-top">
+      <a class="brand" href="#/" aria-label="LearnDeck home"><span class="brand-mark" aria-hidden="true"></span>LearnDeck</a>
+      <div class="top-actions">
+        <button class="pill" id="home-mode" type="button" hidden></button>
+        <button class="icon-btn" data-action="theme" type="button" aria-label="Switch light or dark theme" title="Theme"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9 7 7 0 0 1-9-9Z"/></svg></button>
+        <button class="icon-btn" data-action="settings" type="button" aria-label="Settings" title="Settings"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/></svg></button>
+      </div>
+    </header>
+
+    <main class="home-main" id="main">
+      <h1 class="home-title">Learn it one piece at a time.</h1>
+      <p class="home-lede">Give LearnDeck a paper, a slide deck, notes or a codebase. It starts with the big picture, and every part you click opens a deeper slide, as far down as you want to go.</p>
+
+      <div class="dropzone" id="dropzone" tabindex="0" role="button" aria-describedby="drop-types">
+        <input type="file" id="file-input" multiple hidden>
+        <div class="drop-inner">
+          <svg class="drop-icon" viewBox="0 0 48 48" aria-hidden="true"><rect x="7" y="7" width="34" height="34" rx="4"/><rect x="15" y="15" width="18" height="18" rx="2.5"/><rect x="21" y="21" width="6" height="6" rx="1"/></svg>
+          <p class="drop-title">Drop files here, or <span class="link-like">choose files</span></p>
+          <p class="drop-types" id="drop-types">PDF, PowerPoint, Word, Excel or CSV, code files, Jupyter notebooks, a zipped repository, Markdown, HTML, images. Several files become one deck.</p>
+        </div>
+        <div class="drop-progress" hidden><div class="bar"><span></span></div><p class="drop-status">Uploading…</p></div>
+      </div>
+
+      <form class="link-row" id="link-form" autocomplete="off">
+        <label class="sr-only" for="link-input">Link to a document, page or GitHub repository</label>
+        <input id="link-input" type="url" inputmode="url" placeholder="Or paste a link: article, PDF, GitHub repo, arXiv, public Google Doc" required>
+        <button class="btn primary" type="submit">Open link</button>
+      </form>
+
+      <details class="paste-box">
+        <summary>Paste text instead</summary>
+        <form id="text-form">
+          <label class="sr-only" for="text-title">Title</label>
+          <input id="text-title" type="text" placeholder="Title (optional)">
+          <label class="sr-only" for="text-input">Text to learn</label>
+          <textarea id="text-input" rows="7" placeholder="Paste notes, an article, or code…" required></textarea>
+          <button class="btn primary" type="submit">Make a deck</button>
+        </form>
+      </details>
+
+      <fieldset class="level-pick">
+        <legend>Explain it for</legend>
+        <label><input type="radio" name="level" value="beginner"><span>A beginner</span></label>
+        <label><input type="radio" name="level" value="intermediate" checked><span>Someone with the basics</span></label>
+        <label><input type="radio" name="level" value="expert"><span>An expert</span></label>
+      </fieldset>
+
+      <section class="library" aria-labelledby="lib-title">
+        <h2 id="lib-title">Your decks</h2>
+        <ul id="library-list" class="library-list"></ul>
+        <p class="library-empty" id="library-empty" hidden>Decks you create show up here, with how much of each you've explored.</p>
+      </section>
+    </main>
+  </section>
+
+  <!-- ============================ DECK ============================ -->
+  <section id="deck" class="view" hidden>
+    <header class="deck-top">
+      <a class="brand compact" href="#/" aria-label="Back to all decks"><span class="brand-mark" aria-hidden="true"></span><span class="brand-word">LearnDeck</span></a>
+      <p class="deck-name" id="deck-name"></p>
+      <div class="progress" id="progress" title="Slides you've opened, out of all slides generated so far">
+        <span class="progress-bar"><span></span></span><span class="progress-text"></span>
+      </div>
+      <div class="top-actions">
+        <button class="pill" id="deck-mode" type="button" hidden></button>
+        <button class="icon-btn" data-action="map" type="button" aria-label="Lesson map (M)" title="Lesson map (M)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h6M4 12h4M4 19h4M10 5v14M10 12h10M10 19h10M14 5h6"/></svg></button>
+        <button class="icon-btn" data-action="sources" type="button" aria-label="Original text (S)" title="Original text (S)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h9l4 4v14H6z"/><path d="M15 3v4h4M9 12h7M9 16h7"/></svg></button>
+        <button class="icon-btn" data-action="help" type="button" aria-label="Keyboard shortcuts (?)" title="Keyboard shortcuts (?)"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M7 10h.01M11 10h.01M15 10h.01M8 14h8"/></svg></button>
+        <button class="icon-btn" data-action="theme" type="button" aria-label="Switch light or dark theme" title="Theme"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9 7 7 0 0 1-9-9Z"/></svg></button>
+        <button class="icon-btn" data-action="settings" type="button" aria-label="Settings" title="Settings"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/></svg></button>
+      </div>
+    </header>
+
+    <div class="stage" id="stage">
+      <nav class="ladder" id="ladder" aria-label="Where you are"></nav>
+      <article class="slide" id="slide" tabindex="-1" aria-live="polite"></article>
+      <aside class="rail" id="rail" aria-label="Go deeper"></aside>
+    </div>
+
+    <nav class="bottom-bar" aria-label="Slide navigation">
+      <button class="btn ghost" id="btn-up" type="button" title="Up a level (Esc)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg><span>Up a level</span></button>
+      <div class="sib">
+        <button class="icon-btn" id="btn-prev" type="button" aria-label="Previous part (←)" title="Previous part (←)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button>
+        <span id="sib-pos" class="sib-pos"></span>
+        <button class="icon-btn" id="btn-next" type="button" aria-label="Next part (→)" title="Next part (→)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
+      </div>
+      <button class="btn primary" id="btn-unexplored" type="button" title="Open the next slide you haven't seen (N)"><span>Next unexplored</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
+    </nav>
+
+    <div class="drawer left" id="map-drawer" hidden>
+      <div class="drawer-head"><h2>Lesson map</h2><button class="icon-btn" data-close type="button" aria-label="Close map"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+      <p class="drawer-note">Every slide generated so far. Filled circles are ones you've opened.</p>
+      <div class="map-tree" id="map-tree"></div>
+    </div>
+    <div class="drawer right" id="source-drawer" hidden>
+      <div class="drawer-head"><h2>Original text</h2><button class="icon-btn" data-close type="button" aria-label="Close original text"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+      <p class="drawer-note" id="source-note"></p>
+      <div class="source-list" id="source-list"></div>
+    </div>
+    <div class="scrim" id="scrim" hidden></div>
+  </section>
+
+  <!-- floating "go deeper" button for highlighted text -->
+  <button class="dive-pop" id="dive-pop" type="button" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5M11 8v6M8 11h6"/></svg>Go deeper on this</button>
+
+  <!-- settings -->
+  <dialog id="settings-dialog" class="dialog">
+    <form method="dialog" id="settings-form">
+      <h2>AI settings</h2>
+      <p class="dialog-note" id="settings-active"></p>
+      <label class="field"><span>Provider</span>
+        <select id="set-provider">
+          <option value="auto">Automatic (use whichever key is set)</option>
+          <option value="anthropic">Claude (Anthropic API)</option>
+          <option value="openai">OpenAI or an OpenAI-compatible server</option>
+          <option value="ollama">Ollama (runs on this computer)</option>
+          <option value="none">None (simple mode, no AI)</option>
+        </select>
+      </label>
+      <label class="field" id="set-key-row"><span>API key</span>
+        <input id="set-key" type="password" autocomplete="off" placeholder="Paste a key to add or replace it">
+        <small id="set-key-hint"></small>
+      </label>
+      <label class="field" id="set-model-row"><span>Model</span>
+        <input id="set-model" type="text" autocomplete="off">
+      </label>
+      <label class="field" id="set-ollama-row" hidden><span>Ollama address</span>
+        <input id="set-ollama" type="text" autocomplete="off" placeholder="http://localhost:11434">
+      </label>
+      <p class="dialog-note">Keys are saved in the <code>.env</code> file inside your LearnDeck folder and only sent to the provider you pick.</p>
+      <div class="dialog-actions">
+        <button class="btn ghost" value="cancel" type="submit" formnovalidate>Cancel</button>
+        <button class="btn primary" id="settings-save" value="save" type="submit">Save settings</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="help-dialog" class="dialog">
+    <form method="dialog">
+      <h2>Getting around</h2>
+      <dl class="keys">
+        <dt><kbd>1</kbd>–<kbd>9</kbd></dt><dd>Open that numbered part</dd>
+        <dt><kbd>Esc</kbd> or <kbd>Backspace</kbd></dt><dd>Up a level</dd>
+        <dt><kbd>←</kbd> <kbd>→</kbd></dt><dd>Previous or next part at this level</dd>
+        <dt><kbd>N</kbd></dt><dd>Next slide you haven't opened</dd>
+        <dt><kbd>M</kbd></dt><dd>Lesson map</dd>
+        <dt><kbd>S</kbd></dt><dd>Original text for this slide</dd>
+        <dt><kbd>/</kbd></dt><dd>Ask a question about this slide</dd>
+        <dt>Highlight text</dt><dd>Select any words on a slide, then choose “Go deeper on this”</dd>
+      </dl>
+      <p class="dialog-note">Browser Back and Forward also move between slides.</p>
+      <div class="dialog-actions"><button class="btn primary" type="submit">Done</button></div>
+    </form>
+  </dialog>
+
+  <div class="toasts" id="toasts" role="status" aria-live="polite"></div>
+</body>
+</html>
