@@ -76,7 +76,7 @@ LearnDeck/
 ├── app/
 │   ├── config.py          settings
 │   ├── ingest.py          file and link readers
-│   ├── llm.py             Claude / OpenAI / Ollama adapters
+│   ├── llm.py             Claude / OpenAI / Ollama adapters and the free-services chain
 │   ├── engine.py          overview and drill-down generation, simple mode
 │   ├── store.py           saving decks and progress
 │   └── server.py          HTTP API
@@ -130,11 +130,38 @@ Without an AI provider, LearnDeck runs in **simple mode**: it shows the material
 2. Pick a provider and paste a key. It's saved in the `.env` file in this folder.
 3. If a slide already failed, press **Try again** on it.
 
-| Provider | What you need | Notes |
+| Provider | What you need | Cost |
 |---|---|---|
-| Claude (default) | An API key from [console.anthropic.com](https://console.anthropic.com) | Uses `claude-sonnet-5-5`. Switch to `claude-opus-5-5` for the most capable model or `claude-haiku-5-5` for the fastest and cheapest. Reads scanned pages and images. |
-| OpenAI | An OpenAI API key | Also works with OpenAI-compatible local servers (LM Studio, vLLM) by setting `OPENAI_BASE_URL`. |
-| Ollama | [Ollama](https://ollama.com) installed and a model pulled, e.g. `ollama pull llama3.1` | Free and private, runs on your computer. |
+| **Free services** (Groq → Gemini → OpenRouter → Ollama) | Free keys from Groq, Google AI Studio and OpenRouter (any you skip are left out), plus Ollama for the last step | Free, within each service's daily limits |
+| Claude | An API key from [console.anthropic.com](https://console.anthropic.com) | Pay per use. Uses `claude-sonnet-5-5`; `claude-opus-5-5` is the most capable and `claude-haiku-5-5` the fastest and cheapest. |
+| OpenAI | An OpenAI API key | Pay per use. Also works with OpenAI-compatible local servers (LM Studio, vLLM) by setting `OPENAI_BASE_URL`. |
+| Ollama only | [Ollama](https://ollama.com) installed and a model pulled, e.g. `ollama pull qwen3.5:9b` | Free and private, runs on your computer |
+
+### Free services: how the switching works
+
+With **Free services** selected, every new slide goes to the first service in this list that isn't at its limit:
+
+| Order | Service | Model (default) | Free allowance (approximate, changes often) |
+|---|---|---|---|
+| 1 | [Groq](https://console.groq.com/keys) | `openai/gpt-oss-120b` | 1,000 requests and 200,000 tokens a day, 8,000 tokens a minute |
+| 2 | [Google Gemini](https://aistudio.google.com/apikey) | `gemini-3.8-flash` | A daily request quota shown in AI Studio, resets at midnight Pacific time |
+| 3 | [OpenRouter](https://openrouter.ai/keys) | `openrouter/free` (picks a free model for each request) | 50 requests a day (1,000 after a one-time $10 top-up), 20 a minute |
+| 4 | Ollama on your computer | `qwen3.5:9b` | Unlimited |
+
+- When a service answers "limit reached", LearnDeck marks it as paused until the time the service gives (or until its daily reset) and sends the slide to the next one. When the pause is over, it goes back to the earlier service automatically. Each slide shows which service wrote it, and **Settings** shows each service's status.
+- A short per-minute limit (a wait of 12 seconds or less) is waited out instead of switching, so the daily allowance of the next service isn't spent on a brief pause.
+- If a request is too large for one service's free allowance, it goes to the next service for that slide only.
+- A rejected key pauses that service for 10 minutes and shows the reason in Settings.
+- Scanned pages and images skip Groq (its default model reads text only) and go to Gemini, OpenRouter or Ollama.
+- If every service is unavailable, the slide shows which ones are paused and when each comes back.
+
+To set it up:
+
+1. Create free keys at [console.groq.com/keys](https://console.groq.com/keys), [aistudio.google.com/apikey](https://aistudio.google.com/apikey) and [openrouter.ai/keys](https://openrouter.ai/keys). You can skip any of them.
+2. Download a local model for the last step, for example `ollama pull qwen3.5:9b` (16 GB Mac), `ollama pull qwen3.5:4b` (8 GB) or `ollama pull qwen3.5:27b` (32 GB or more).
+3. In Settings, choose **Free services**, paste the keys, check the Ollama model name and save.
+
+The models, the order and how much text each service is sent can be changed in `.env` (`GROQ_MODEL`, `GEMINI_MODEL`, `OPENROUTER_MODEL`, `FREE_CHAIN`, `GROQ_INPUT_CHARS` and so on; see `.env.example`).
 
 ### Use it
 
@@ -162,7 +189,8 @@ All settings live in `.env` (see `.env.example` for the full list). The most use
 
 | Setting | Default | What it does |
 |---|---|---|
-| `LLM_PROVIDER` | `auto` | `auto`, `anthropic`, `openai`, `ollama` or `none` |
+| `LLM_PROVIDER` | `auto` | `free`, `auto`, `anthropic`, `openai`, `ollama` or `none`. `auto` picks Claude, then OpenAI, then the free services, based on which keys are set. |
+| `FREE_CHAIN` | `groq,gemini,openrouter,ollama` | Order of the free services |
 | `ANTHROPIC_MODEL` | `claude-sonnet-5-5` | Claude model to use |
 | `MAX_DEPTH` | `4` | How many levels you can go below the overview |
 | `EXPLAIN_LANGUAGE` | `English` | Language the slides are written in |
@@ -177,6 +205,7 @@ Restart the app after editing `.env` by hand. Changes made in the Settings panel
 - **"Simple mode" in the corner**: no AI key is active. Open Settings and add one.
 - **"API key was rejected"**: re-paste the key in Settings, then press **Try again** on the slide.
 - **"Model was not found"**: the model name in Settings is wrong or not available on your account.
+- **"None of the free AI services could answer right now"**: every free service is at its limit and Ollama isn't running or doesn't have the model. Start the Ollama app and run `ollama pull` with the model shown in Settings, or wait for the time shown.
 - **A link fails**: download the file and drop it in instead.
 - **Port already in use**: `./start.sh --port 9000`.
 - **Start over**: delete decks from the home page, or delete the `data/` folder.
@@ -193,6 +222,14 @@ Restart the app after editing `.env` by hand. Changes made in the Settings panel
 - **Small local models (Ollama) give simpler slides** and sometimes return badly formatted answers, which shows as an error you can retry. Their smaller memory means less of the document is read at once (about 35,000 characters with the default settings).
 - **Simple mode** (no AI) only shows the material's own structure, and its question box can only find matching passages, not answer questions.
 
+### Free services
+
+- **Free limits are small and change often.** Groq's free plan allows about 8,000 tokens a minute, so each request to Groq carries only about 12,000 characters of the document; overviews of long documents are less detailed there. OpenRouter's 50 free requests a day go quickly.
+- **Quality varies between slides.** Different services and models write different slides, and `openrouter/free` may pick a different model each time.
+- **Privacy:** Google may use free-tier Gemini prompts to improve its products (outside the EU, UK and EEA). Don't send private documents through the free services; use Ollama alone for those.
+- **Pauses are kept in memory only.** Restarting LearnDeck forgets them, so the first request after a restart may hit a limit once more before switching.
+- The default model names were current in October 2026. If a service retires one, it shows as "doesn't have the model" in Settings; change it in `.env`.
+
 ### Large documents
 
 - For the overview, documents up to about 160,000 characters (very roughly 80–100 pages of text) are read in full. Larger ones are read in a **shortened form** (the start of every part), so the overview can miss details buried deep in long sections. Deeper slides read their own parts in full, up to 60,000 characters at a time.
@@ -203,7 +240,7 @@ Restart the app after editing `.env` by hand. Changes made in the Settings panel
 
 - **Not supported:** Keynote, Pages and Numbers files, EPUB e-books, audio and video (including YouTube links), and password-protected PDFs.
 - **Old Office formats** (`.ppt`, `.doc`, `.xls`) need LibreOffice installed; otherwise save them as `.pptx`, `.docx` or `.xlsx` first.
-- **Figures, charts and diagrams** inside PDFs, slides and Word files are not analysed; only their text is read. Exceptions: scanned or image-only PDF pages and picture-only slides are read with AI vision (Claude, OpenAI, or a vision-capable Ollama model), up to 40 per document.
+- **Figures, charts and diagrams** inside PDFs, slides and Word files are not analysed; only their text is read. Exceptions: scanned or image-only PDF pages and picture-only slides are read with AI vision (Claude, OpenAI, Gemini, OpenRouter, or a vision-capable Ollama model such as `qwen3.5`), up to 40 per document.
 - **Tables and equations in PDFs** come through as plain text, so complex layouts and formulas can be garbled.
 - **Spreadsheets:** only the first 250 rows of each sheet (or CSV) are read. LearnDeck explains data; it doesn't calculate over the whole file.
 - **PowerPoint slide previews** in the side panel only appear if LibreOffice is installed; otherwise you see the slide's text.
@@ -232,4 +269,6 @@ Restart the app after editing `.env` by hand. Changes made in the Settings panel
 
 ### Testing so far
 
-- Tested on Linux with Python 3.9 and 3.13, in Chromium at desktop and phone sizes, with every supported file type, simple mode, and the Claude and OpenAI code paths (against a test server). Not yet tested directly on macOS or Windows, with Ollama, or with a real API key end to end.
+- Tested on Linux with Python 3.9 and 3.13, in Chromium at desktop and phone sizes, with every supported file type, simple mode, and the Claude and OpenAI code paths (against a test server).
+- The free-services switching was tested against stand-in servers that reply like Groq, Gemini, OpenRouter and Ollama, including their limit errors. It has not yet been run against the real services with real keys.
+- Not yet tested directly on macOS or Windows, with Ollama, or with a real API key end to end.

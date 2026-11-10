@@ -355,7 +355,18 @@ details.check .answer { font: 400 17px/1.6 var(--read); color: var(--ink); }
 @keyframes up { from { opacity: 0; transform: scale(1.015); } to { opacity: 1; transform: none; } }
 
 /* dialogs + toasts */
-.dialog { border: 1px solid var(--line); border-radius: var(--r-m); background: var(--sheet); color: var(--ink); padding: 0; width: min(520px, 94vw); box-shadow: var(--shadow); }
+.dialog { border: 1px solid var(--line); border-radius: var(--r-m); background: var(--sheet); color: var(--ink); padding: 0; width: min(560px, 94vw); max-height: 92vh; overflow: auto; box-shadow: var(--shadow); }
+.free-box { display: grid; gap: 12px; border: 1px solid var(--line-2); border-radius: var(--r-m); padding: 14px; background: var(--sheet-2); }
+.chain-status { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; counter-reset: step; }
+.chain-status li { display: grid; grid-template-columns: 22px 1fr; gap: 8px; align-items: baseline; font-size: 14px; counter-increment: step; }
+.chain-status li::before { content: counter(step); font: 600 13px/1 var(--read); color: var(--ink-3); text-align: center; }
+.chain-status .svc { font-weight: 600; }
+.chain-status .model { color: var(--ink-3); font-size: 12.5px; }
+.chain-status .state { display: inline-block; margin-left: 6px; padding: 1px 8px; border-radius: 999px; font-size: 12.5px; border: 1px solid var(--line); color: var(--ink-2); background: var(--sheet); }
+.chain-status .state.active { border-color: var(--visited); color: var(--visited); }
+.chain-status .state.limit, .chain-status .state.down { border-color: var(--highlight); background: color-mix(in srgb, var(--highlight) 28%, var(--sheet)); color: var(--ink); }
+.chain-status .state.config { border-color: var(--danger); color: var(--danger); }
+.chain-status .state.missing { border-style: dashed; color: var(--ink-3); }
 .dialog::backdrop { background: rgba(16, 24, 42, .4); }
 .dialog form { padding: 22px 24px; display: grid; gap: 14px; }
 .dialog h2 { font: 600 24px/1.2 var(--read); margin: 0; }

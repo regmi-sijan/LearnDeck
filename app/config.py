@@ -41,7 +41,8 @@ MAX_UPLOAD_MB = _int("MAX_UPLOAD_MB", 300)
 
 
 # --- AI provider -----------------------------------------------------------
-# LLM_PROVIDER: auto | anthropic | openai | ollama | none
+# LLM_PROVIDER: auto | free | anthropic | openai | ollama | none
+#   free = Groq, then Gemini, then OpenRouter, then Ollama (see FREE_CHAIN)
 def llm_settings() -> dict:
     """Read fresh each time so the in-app Settings panel can change them."""
     return {
@@ -49,10 +50,24 @@ def llm_settings() -> dict:
         "anthropic_model": os.getenv("ANTHROPIC_MODEL", "claude-sonnet-5-5"),
         "openai_model": os.getenv("OPENAI_MODEL", "gpt-5-mini"),
         "openai_base_url": os.getenv("OPENAI_BASE_URL") or None,
-        "ollama_model": os.getenv("OLLAMA_MODEL", "llama3.1"),
+        "ollama_model": os.getenv("OLLAMA_MODEL", "qwen3.5:9b"),
         "ollama_url": os.getenv("OLLAMA_URL", "http://localhost:11434"),
         "ollama_num_ctx": _int("OLLAMA_NUM_CTX", 16384),
+        # free chain
+        "free_chain": tuple(x.strip().lower() for x in os.getenv("FREE_CHAIN", "groq,gemini,openrouter,ollama")
+                            .split(",") if x.strip()),
+        "groq_model": os.getenv("GROQ_MODEL", "openai/gpt-oss-120b"),
+        "gemini_model": os.getenv("GEMINI_MODEL", "gemini-3.8-flash"),
+        "openrouter_model": os.getenv("OPENROUTER_MODEL", "openrouter/free"),
+        # how much document text each free service is sent per request (characters)
+        "groq_input_chars": _int("GROQ_INPUT_CHARS", 12000),      # Groq's free plan allows ~8,000 tokens/minute
+        "gemini_input_chars": _int("GEMINI_INPUT_CHARS", 160000),
+        "openrouter_input_chars": _int("OPENROUTER_INPUT_CHARS", 60000),
     }
+
+
+FREE_WAIT_SECONDS = _int("FREE_WAIT_SECONDS", 12)  # wait out short per-minute limits instead of switching
+FREE_TIMEOUT = _int("FREE_TIMEOUT", 120)            # seconds before giving up on a free service
 
 
 # --- Lesson generation -----------------------------------------------------

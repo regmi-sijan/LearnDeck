@@ -8,7 +8,8 @@
   const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
   const KIND = { pdf: "PDF", pptx: "Slides", docx: "Word document", xlsx: "Spreadsheet", csv: "Table", code: "Code",
     repo: "Code repository", notebook: "Notebook", markdown: "Notes", text: "Text", web: "Web page", image: "Image", collection: "Several files" };
-  const PROVIDER = { anthropic: "Claude", openai: "OpenAI", ollama: "Ollama", fake: "Test model" };
+  const PROVIDER = { anthropic: "Claude", openai: "OpenAI", ollama: "Ollama", groq: "Groq", gemini: "Gemini",
+    openrouter: "OpenRouter", free: "Free services", fake: "Test model" };
   const SKIP_DIRS = new Set(["node_modules", ".git", "__pycache__", ".venv", "venv", "env", "dist", "build", ".next", "target", ".idea", ".vscode", ".mypy_cache", ".pytest_cache", "Pods", "DerivedData"]);
 
   const S = { deck: null, deckId: null, node: null, poll: null, token: 0, health: null, settings: null, zoomClone: null, zoomStart: 0 };
@@ -93,30 +94,63 @@
 
   function md(source) {
     let src = String(source || "");
+    let marker = "LDPLACEHOLDER";
+    while (src.toLowerCase().includes(marker.toLowerCase())) marker += "X";
+    const codeMarker = new RegExp(marker + "C(\\d+)Z", "g");
+    const mathMarker = new RegExp(marker + "M(\\d+)Z", "g");
     const codes = [];
-    const hold = (m) => { codes.push(m); return `@@C${codes.length - 1}@@`; };
+    const hold = (m) => { codes.push(m); return `${marker}C${codes.length - 1}Z`; };
     src = src.replace(/```[\s\S]*?(?:```|$)/g, hold).replace(/`[^`\n]+`/g, hold);
     const maths = [];
-    const keep = (tex, display) => { maths.push({ tex, display }); return `@@M${maths.length - 1}@@`; };
+    const keep = (tex, display) => { maths.push({ tex, display }); return `${marker}M${maths.length - 1}Z`; };
     src = src
       .replace(/\$\$([\s\S]+?)\$\$/g, (_, t) => keep(t, true))
       .replace(/\\\[([\s\S]+?)\\\]/g, (_, t) => keep(t, true))
       .replace(/\\\(([\s\S]+?)\\\)/g, (_, t) => keep(t, false))
       .replace(/(^|[^\\\w$])\$(?!\s)([^$\n]+?)(?<!\s)\$(?![\w$])/g, (_, pre, t) => pre + keep(t, false));
-    src = src.replace(/@@C(\d+)@@/g, (_, i) => codes[+i]);
-    let html;
-    if (window.marked && window.DOMPurify) {
-      html = window.DOMPurify.sanitize(window.marked.parse(src, { gfm: true, breaks: false }));
-    } else {
-      html = fallbackMd(src);
-    }
-    return html.replace(/@@M(\d+)@@/g, (_, i) => {
-      const m = maths[+i];
-      if (window.katex) {
-        try { return window.katex.renderToString(m.tex, { displayMode: m.display, throwOnError: false }); } catch { /* fall through */ }
+    src = src.replace(codeMarker, (_, i) => codes[+i]);
+    const useMarkdown = window.marked && window.DOMPurify;
+    const html = useMarkdown ? window.marked.parse(src, { gfm: true, breaks: false }) : fallbackMd(src);
+    if (!maths.length) return useMarkdown ? window.DOMPurify.sanitize(html) : html;
+
+    const literal = (m) => m.display ? "$$" + m.tex + "$$" : "$" + m.tex + "$";
+    const template = document.createElement("template");
+    template.innerHTML = html;
+    if (useMarkdown) {
+      // Restore formulas in attributes as plain text before sanitizing.
+      for (const element of template.content.querySelectorAll("*")) {
+        for (const attr of element.attributes) {
+          attr.value = attr.value.replace(mathMarker, (match, i) => maths[i] ? literal(maths[i]) : match);
+        }
       }
-      return esc(m.display ? `$$${m.tex}$$` : `$${m.tex}$`);
-    });
+      template.innerHTML = window.DOMPurify.sanitize(template.innerHTML);
+    }
+    const walker = document.createTreeWalker(template.content, NodeFilter.SHOW_TEXT);
+    const nodes = [];
+    while (walker.nextNode()) nodes.push(walker.currentNode);
+    for (const node of nodes) {
+      const matches = [...node.data.matchAll(mathMarker)].filter((match) => maths[match[1]]);
+      if (!matches.length) continue;
+      const fragment = document.createDocumentFragment();
+      let end = 0;
+      for (const match of matches) {
+        const m = maths[match[1]];
+        fragment.append(node.data.slice(end, match.index));
+        let rendered;
+        if (window.katex) {
+          try {
+            const math = document.createElement("template");
+            math.innerHTML = window.katex.renderToString(m.tex, { displayMode: m.display, throwOnError: false });
+            rendered = math.content;
+          } catch { /* show the literal formula */ }
+        }
+        fragment.append(rendered || literal(m));
+        end = match.index + match[0].length;
+      }
+      fragment.append(node.data.slice(end));
+      node.replaceWith(fragment);
+    }
+    return template.innerHTML;
   }
   const mdInline = (s) => md(s).replace(/^\s*<p>([\s\S]*)<\/p>\s*$/, "$1");
 
@@ -159,10 +193,12 @@
 
   // --------------------------------------------------------------- router
   function route() {
+    const token = ++S.token;
+    stopPoll();
     const parts = location.hash.replace(/^#\/?/, "").split("/").filter(Boolean);
     closeDrawers();
     hideDivePop();
-    if (parts[0] === "d" && parts[1]) showDeck(decodeURIComponent(parts[1]), decodeURIComponent(parts[2] || "root"));
+    if (parts[0] === "d" && parts[1]) showDeck(decodeURIComponent(parts[1]), decodeURIComponent(parts[2] || "root"), token);
     else showHome();
   }
   const go = (deckId, nodeId) => { location.hash = `#/d/${encodeURIComponent(deckId)}/${encodeURIComponent(nodeId)}`; };
@@ -170,7 +206,6 @@
 
   // ----------------------------------------------------------------- home
   async function showHome() {
-    stopPoll();
     S.deck = null; S.deckId = null; S.node = null;
     $("#deck").hidden = true;
     $("#home").hidden = false;
@@ -189,6 +224,12 @@
     for (const el of [$("#home-mode"), $("#deck-mode")]) {
       el.hidden = false;
       el.classList.toggle("warn", simple);
+      if (llm.provider === "free") {
+        el.textContent = `AI: Free (${llm.model})`;
+        el.title = (llm.chain || []).map((c) => `${c.label}: ${c.detail}`).join("\n") + "\nClick to change.";
+        el.classList.toggle("warn", !(llm.chain || []).some((c) => c.state === "active"));
+        continue;
+      }
       el.textContent = simple ? "Simple mode: add an AI key" : `AI: ${PROVIDER[llm.provider] || llm.provider}`;
       el.title = simple ? "Without an AI provider, LearnDeck shows the material's own structure. Click to add a key."
         : `Model: ${llm.model}. Click to change.`;
@@ -336,19 +377,27 @@
   });
 
   // ----------------------------------------------------------------- deck
-  async function showDeck(deckId, nodeId) {
+  async function showDeck(deckId, nodeId, token) {
     $("#home").hidden = true;
-    $("#deck").hidden = false;
     if (S.deckId !== deckId || !S.deck) {
-      S.deckId = deckId; S.node = null;
-      try { await refreshDeck(); }
-      catch (e) { toast(e.message, true); location.hash = "#/"; return; }
+      $("#deck").hidden = true;
+      S.deckId = deckId;
+      S.deck = null;
+      S.node = null;
+      try { await refreshDeck(deckId, token); }
+      catch (e) {
+        if (token !== S.token) return;
+        toast(e.message, true);
+        location.hash = "#/";
+        return;
+      }
     }
-    loadNode(nodeId);
+    if (token === S.token) loadNode(nodeId);
   }
 
-  async function refreshDeck() {
-    const d = await api(`/api/decks/${S.deckId}`);
+  async function refreshDeck(deckId, token) {
+    const d = await api(`/api/decks/${deckId}`);
+    if (token !== S.token) return;
     S.deck = d;
     if (d.llm) { S.health = { ...(S.health || {}), llm: d.llm }; updateModePills(); }
     $("#deck-name").textContent = d.title;
@@ -369,14 +418,21 @@
     const token = ++S.token;
     let node;
     try { node = await api(`/api/decks/${S.deckId}/nodes/${encodeURIComponent(nodeId)}${opts.retry ? "?retry=true" : ""}`); }
-    catch (e) { finishZoom(); toast(e.message, true); return; }
+    catch (e) {
+      if (token !== S.token) return;
+      finishZoom();
+      toast(e.message, true);
+      if ($("#deck").hidden) location.hash = "#/";
+      return;
+    }
     if (token !== S.token) return;
     const prev = S.node;
     const isNew = !prev || prev.id !== node.id;
     const direction = isNew && prev ? (node.depth > prev.depth ? "down" : node.depth < prev.depth ? "up" : "side") : isNew ? "down" : null;
     S.node = node;
+    $("#deck").hidden = false;
     renderNode(node, direction);
-    if (node.status === "ready") onReady(node);
+    if (node.status === "ready") onReady(node, token);
     else if (node.status !== "error") S.poll = setTimeout(() => pollNode(token), 1000);
   }
 
@@ -384,12 +440,15 @@
     if (token !== S.token || !S.node) return;
     let node;
     try { node = await api(`/api/decks/${S.deckId}/nodes/${S.node.id}`); }
-    catch { S.poll = setTimeout(() => pollNode(token), 2500); return; }
+    catch {
+      if (token === S.token) S.poll = setTimeout(() => pollNode(token), 2500);
+      return;
+    }
     if (token !== S.token) return;
     S.node = node;
     if (node.status === "ready" || node.status === "error") {
       renderNode(node, null);
-      if (node.status === "ready") onReady(node);
+      if (node.status === "ready") onReady(node, token);
       return;
     }
     const msg = $("#progress-msg");
@@ -397,12 +456,14 @@
     S.poll = setTimeout(() => pollNode(token), 1200);
   }
 
-  async function onReady(n) {
+  async function onReady(n, token) {
+    const deckId = S.deckId;
     if (!n.visited) {
-      try { await api(`/api/decks/${S.deckId}/nodes/${n.id}/visited`, { method: "POST" }); n.visited = true; } catch { /* ignore */ }
+      try { await api(`/api/decks/${deckId}/nodes/${n.id}/visited`, { method: "POST" }); n.visited = true; } catch { /* ignore */ }
     }
-    try { await refreshDeck(); } catch { /* ignore */ }
-    if (S.node && S.node.id === n.id) renderNav(n);
+    if (token !== S.token) return;
+    try { await refreshDeck(deckId, token); } catch { /* ignore */ }
+    if (token === S.token) renderNav(n);
   }
 
   function renderNode(n, direction) {
@@ -620,22 +681,26 @@
   async function regenerate() {
     if (!S.node) return;
     if (S.node.children.length && !confirm("Rewrite this slide? The deeper slides under it will be rewritten too.")) return;
+    const { deckId, token, node } = S;
     try {
-      await api(`/api/decks/${S.deckId}/nodes/${S.node.id}/regenerate`, { method: "POST" });
-      await refreshDeck();
-      loadNode(S.node.id);
-    } catch (e) { toast(e.message, true); }
+      await api(`/api/decks/${deckId}/nodes/${node.id}/regenerate`, { method: "POST" });
+      if (token !== S.token) return;
+      await refreshDeck(deckId, token);
+      if (token === S.token) loadNode(node.id);
+    } catch (e) { if (token === S.token) toast(e.message, true); }
   }
 
   async function diveInto(text) {
     hideDivePop();
     if (!S.node || S.node.status !== "ready" || !text) return;
+    const { deckId, token } = S;
     try {
-      const r = await api(`/api/decks/${S.deckId}/nodes/${S.node.id}/dive`, { method: "POST", body: { text } });
+      const r = await api(`/api/decks/${deckId}/nodes/${S.node.id}/dive`, { method: "POST", body: { text } });
+      if (token !== S.token) return;
       const sel = window.getSelection();
       if (sel) sel.removeAllRanges();
-      go(S.deckId, r.id);
-    } catch (e) { toast(e.message, true); }
+      go(deckId, r.id);
+    } catch (e) { if (token === S.token) toast(e.message, true); }
   }
 
   document.addEventListener("submit", async (e) => {
@@ -644,6 +709,7 @@
     const input = $("#ask-input"), btn = $("button", e.target);
     const q = input.value.trim();
     if (!q || !S.node) return;
+    const { token } = S;
     const nodeId = S.node.id;
     btn.disabled = true; input.disabled = true;
     const list = $("#qa-list");
@@ -653,14 +719,20 @@
     list.appendChild(pending);
     try {
       const r = await api(`/api/decks/${S.deckId}/nodes/${nodeId}/ask`, { method: "POST", body: { question: q } });
-      if (S.node && S.node.id === nodeId) {
+      if (token === S.token) {
         S.node.qa = [...(S.node.qa || []), { q, a: r.answer }];
         pending.outerHTML = qaItem({ q, a: r.answer });
         enhance(list);
         input.value = "";
       }
-    } catch (err) { pending.remove(); toast(err.message, true); }
-    finally { btn.disabled = false; input.disabled = false; input.focus(); }
+    } catch (err) {
+      pending.remove();
+      if (token === S.token) toast(err.message, true);
+    } finally {
+      btn.disabled = false;
+      input.disabled = false;
+      if (token === S.token) input.focus();
+    }
   });
 
   // highlight any text on a slide -> "Go deeper on this"
@@ -739,11 +811,13 @@
   }
 
   async function renderSources() {
+    const { token } = S;
     const list = $("#source-list"), note = $("#source-note");
     list.innerHTML = `<p class="reading-status"><span class="spinner" aria-hidden="true"></span><span>Loading…</span></p>`;
     note.textContent = "";
     try {
       const r = await api(`/api/decks/${S.deckId}/nodes/${S.node.id}/sources`);
+      if (token !== S.token) return;
       note.textContent = r.total > r.items.length
         ? `The first ${r.items.length} of ${r.total} parts of the original this slide draws on.`
         : `The ${r.items.length === 1 ? "part" : r.items.length + " parts"} of the original this slide draws on.`;
@@ -756,7 +830,7 @@
           ${s.truncated ? `<p class="drawer-note">This part is long, so it's shortened here.</p>` : ""}</section>`;
       }).join("") || "<p>No original text is linked to this slide.</p>";
       enhance(list);
-    } catch (e) { list.innerHTML = `<p>${esc(e.message)}</p>`; }
+    } catch (e) { if (token === S.token) list.innerHTML = `<p>${esc(e.message)}</p>`; }
   }
 
   // settings
@@ -766,23 +840,50 @@
     $("#set-provider").value = s.provider;
     $("#set-key").value = "";
     $("#set-ollama").value = s.ollama_url || "";
-    syncSettingsForm();
     const a = s.active || {};
-    $("#settings-active").textContent = a.provider && a.provider !== "none"
-      ? `Now using ${PROVIDER[a.provider] || a.provider} with ${a.model}.`
-      : "No AI provider is active, so LearnDeck is in simple mode and shows the material's own structure.";
+    $("#settings-active").textContent = a.provider === "free"
+      ? (a.model && a.model !== "none available" ? `Now using the free services. ${a.model} is answering.` : "Now using the free services, but none is available at the moment.")
+      : a.provider && a.provider !== "none"
+        ? `Now using ${PROVIDER[a.provider] || a.provider} with ${a.model}.`
+        : "No AI provider is active, so LearnDeck is in simple mode and shows the material's own structure.";
+    $$("#set-groq, #set-gemini, #set-openrouter").forEach((i) => { i.value = ""; });
+    syncSettingsForm();
     $("#settings-dialog").showModal();
+  }
+
+  // The free services, in the order they are tried, with what each is doing right now.
+  function renderChain(s) {
+    const a = s.active || {};
+    const order = s.free_chain || ["groq", "gemini", "openrouter", "ollama"];
+    let items;
+    if (a.provider === "free" && a.chain) {
+      items = [...a.chain].sort((x, y) => order.indexOf(x.name) - order.indexOf(y.name));
+    } else {
+      items = order.map((n) => {
+        const local = n === "ollama", has = local || s[`${n}_key_set`];
+        return { name: n, label: PROVIDER[n] || n, model: local ? s.ollama_model : s[`${n}_model`] || "",
+          state: has ? "ready" : "missing", detail: local ? "on this computer" : has ? "key saved" : "no key yet, skipped" };
+      });
+    }
+    $("#chain-status").innerHTML = items.map((c) => `<li><span><span class="svc">${esc(c.label)}</span>${c.model ? ` <span class="model">${esc(c.model)}</span>` : ""}<span class="state ${esc(c.state)}">${esc(c.detail)}</span></span></li>`).join("");
   }
   function syncSettingsForm() {
     const p = $("#set-provider").value, s = S.settings || {};
     const keyFor = p === "openai" ? "openai" : p === "anthropic" ? "anthropic" : null;
-    $("#set-key-row").hidden = p === "ollama" || p === "none";
-    $("#set-model-row").hidden = !["anthropic", "openai", "ollama"].includes(p);
-    $("#set-ollama-row").hidden = p !== "ollama";
+    const free = p === "free";
+    $("#set-free").hidden = !free;
+    $("#set-key-row").hidden = free || p === "ollama" || p === "none";
+    $("#set-model-row").hidden = !["anthropic", "openai", "ollama", "free"].includes(p);
+    $("#set-model-label").textContent = free ? "Ollama model (used when the others are at their limits)" : p === "ollama" ? "Ollama model" : "Model";
+    $("#set-ollama-row").hidden = !(p === "ollama" || free);
+    for (const [n, where] of [["groq", "console.groq.com/keys"], ["gemini", "aistudio.google.com/apikey"], ["openrouter", "openrouter.ai/keys"]]) {
+      $(`[data-hint="${n}"]`).textContent = s[`${n}_key_set`] ? "A key is saved. Leave this blank to keep it." : `Get a free key at ${where}.`;
+    }
+    if (free) renderChain(s);
     const saved = keyFor === "openai" ? s.openai_key_set : keyFor === "anthropic" ? s.anthropic_key_set : (s.anthropic_key_set || s.openai_key_set);
     $("#set-key-hint").textContent = saved ? "A key is already saved. Leave this blank to keep it."
       : keyFor === "openai" ? "Create a key at platform.openai.com." : "Create a key at console.anthropic.com (keys start with sk-ant-).";
-    const model = { anthropic: s.anthropic_model, openai: s.openai_model, ollama: s.ollama_model }[p] || "";
+    const model = { anthropic: s.anthropic_model, openai: s.openai_model, ollama: s.ollama_model, free: s.ollama_model }[p] || "";
     $("#set-model").value = model;
   }
   $("#set-provider").addEventListener("change", syncSettingsForm);
@@ -791,11 +892,17 @@
     try {
       const s = await api("/api/settings", { method: "POST", body: {
         provider: $("#set-provider").value, api_key: $("#set-key").value || null,
-        model: $("#set-model").value || null, ollama_url: $("#set-ollama").value || null } });
+        model: $("#set-model").value || null, ollama_url: $("#set-ollama").value || null,
+        groq_key: $("#set-groq").value || null, gemini_key: $("#set-gemini").value || null,
+        openrouter_key: $("#set-openrouter").value || null } });
       const a = s.active || {};
       S.health = { ...(S.health || {}), llm: a };
       updateModePills();
-      toast(a.provider && a.provider !== "none" ? `Settings saved. Using ${PROVIDER[a.provider] || a.provider} with ${a.model}.` : "Settings saved. Simple mode is on.");
+      if (a.provider === "free") {
+        toast(a.model && a.model !== "none available" ? `Settings saved. Free services are on, starting with ${a.model}.` : "Settings saved. Free services are on.");
+      } else {
+        toast(a.provider && a.provider !== "none" ? `Settings saved. Using ${PROVIDER[a.provider] || a.provider} with ${a.model}.` : "Settings saved. Simple mode is on.");
+      }
     } catch (e) { toast(e.message, true); }
   });
 

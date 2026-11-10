@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import os
 import re
+import tempfile
+import threading
 from pathlib import Path
 from typing import Optional
 
@@ -20,6 +22,7 @@ from .store import DeckStore
 app = FastAPI(title="LearnDeck", docs_url="/api/docs", redoc_url=None)
 store = DeckStore()
 engine = Engine(store)
+_settings_lock = threading.Lock()
 
 
 # ---------------------------------------------------------------- helpers
@@ -83,19 +86,26 @@ class SettingsIn(BaseModel):
     api_key: Optional[str] = None
     model: Optional[str] = None
     ollama_url: Optional[str] = None
+    groq_key: Optional[str] = None
+    gemini_key: Optional[str] = None
+    openrouter_key: Optional[str] = None
 
 
 @app.get("/api/settings")
 def get_settings():
     s = config.llm_settings()
     return {**s, "anthropic_key_set": bool(os.getenv("ANTHROPIC_API_KEY")),
-            "openai_key_set": bool(os.getenv("OPENAI_API_KEY")), "active": health()["llm"]}
+            "openai_key_set": bool(os.getenv("OPENAI_API_KEY")),
+            "groq_key_set": bool(os.getenv("GROQ_API_KEY")),
+            "gemini_key_set": bool(os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")),
+            "openrouter_key_set": bool(os.getenv("OPENROUTER_API_KEY")),
+            "active": health()["llm"]}
 
 
 @app.post("/api/settings")
 def save_settings(body: SettingsIn):
     provider = body.provider.strip().lower()
-    if provider not in ("auto", "anthropic", "openai", "ollama", "none"):
+    if provider not in ("auto", "free", "anthropic", "openai", "ollama", "none"):
         raise HTTPException(400, "Unknown provider")
     updates = {"LLM_PROVIDER": provider}
     if body.api_key and body.api_key.strip():
@@ -105,18 +115,27 @@ def save_settings(body: SettingsIn):
         else:
             target = "ANTHROPIC_API_KEY" if key.startswith("sk-ant-") else "OPENAI_API_KEY"
         updates[target] = key
+    for field, var in (("groq_key", "GROQ_API_KEY"), ("gemini_key", "GEMINI_API_KEY"),
+                       ("openrouter_key", "OPENROUTER_API_KEY")):
+        value = (getattr(body, field) or "").strip()
+        if value:
+            updates[var] = value
     if body.model and body.model.strip():
-        name = {"anthropic": "ANTHROPIC_MODEL", "openai": "OPENAI_MODEL", "ollama": "OLLAMA_MODEL"}.get(provider)
+        name = {"anthropic": "ANTHROPIC_MODEL", "openai": "OPENAI_MODEL", "ollama": "OLLAMA_MODEL",
+                "free": "OLLAMA_MODEL"}.get(provider)
         if name:
             updates[name] = body.model.strip()
     if body.ollama_url and body.ollama_url.strip():
         updates["OLLAMA_URL"] = body.ollama_url.strip()
-    for k, v in updates.items():
-        if re.search(r"[\r\n]", v):
-            raise HTTPException(400, "Invalid value")
-        os.environ[k] = v
-    _write_env(updates)
-    return get_settings()
+    if any(re.search(r"[\r\n\x00]", value) for value in updates.values()):
+        raise HTTPException(400, "Invalid value")
+    with _settings_lock:
+        try:
+            _write_env(updates)
+        except (OSError, UnicodeError) as exc:
+            raise HTTPException(500, "Could not save settings.") from exc
+        os.environ.update(updates)
+        return get_settings()
 
 
 def _write_env(updates: dict) -> None:
@@ -129,11 +148,14 @@ def _write_env(updates: dict) -> None:
             lines[i] = f"{m.group(1)}={updates[m.group(1)]}"
             seen.add(m.group(1))
     lines += [f"{k}={v}" for k, v in updates.items() if k not in seen]
-    path.write_text("\n".join(lines) + "\n", "utf-8")
+    output = tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent, delete=False)
+    temp_path = Path(output.name)
     try:
-        os.chmod(path, 0o600)
-    except OSError:
-        pass
+        with output:
+            output.write("\n".join(lines) + "\n")
+        temp_path.replace(path)
+    finally:
+        temp_path.unlink(missing_ok=True)
 
 
 @app.get("/api/decks")

@@ -135,24 +135,41 @@
       <p class="dialog-note" id="settings-active"></p>
       <label class="field"><span>Provider</span>
         <select id="set-provider">
+          <option value="free">Free services: Groq, then Gemini, then OpenRouter, then Ollama</option>
           <option value="auto">Automatic (use whichever key is set)</option>
           <option value="anthropic">Claude (Anthropic API)</option>
           <option value="openai">OpenAI or an OpenAI-compatible server</option>
-          <option value="ollama">Ollama (runs on this computer)</option>
+          <option value="ollama">Ollama only (runs on this computer)</option>
           <option value="none">None (simple mode, no AI)</option>
         </select>
       </label>
+      <div class="free-box" id="set-free" hidden>
+        <p class="dialog-note">LearnDeck uses Groq first. When a service reaches its free limit, the next one takes over, and the earlier one is used again once its limit resets. Services without a key are skipped. Ollama on this computer is the last resort.</p>
+        <ol class="chain-status" id="chain-status"></ol>
+        <label class="field"><span>Groq API key</span>
+          <input id="set-groq" type="password" autocomplete="off" placeholder="Paste a key to add or replace it">
+          <small data-hint="groq"></small>
+        </label>
+        <label class="field"><span>Google Gemini API key</span>
+          <input id="set-gemini" type="password" autocomplete="off" placeholder="Paste a key to add or replace it">
+          <small data-hint="gemini"></small>
+        </label>
+        <label class="field"><span>OpenRouter API key</span>
+          <input id="set-openrouter" type="password" autocomplete="off" placeholder="Paste a key to add or replace it">
+          <small data-hint="openrouter"></small>
+        </label>
+      </div>
       <label class="field" id="set-key-row"><span>API key</span>
         <input id="set-key" type="password" autocomplete="off" placeholder="Paste a key to add or replace it">
         <small id="set-key-hint"></small>
       </label>
-      <label class="field" id="set-model-row"><span>Model</span>
+      <label class="field" id="set-model-row"><span id="set-model-label">Model</span>
         <input id="set-model" type="text" autocomplete="off">
       </label>
       <label class="field" id="set-ollama-row" hidden><span>Ollama address</span>
         <input id="set-ollama" type="text" autocomplete="off" placeholder="http://localhost:11434">
       </label>
-      <p class="dialog-note">Keys are saved in the <code>.env</code> file inside your LearnDeck folder and only sent to the provider you pick.</p>
+      <p class="dialog-note">Keys are saved in the <code>.env</code> file inside your LearnDeck folder and only sent to the service they belong to.</p>
       <div class="dialog-actions">
         <button class="btn ghost" value="cancel" type="submit" formnovalidate>Cancel</button>
         <button class="btn primary" id="settings-save" value="save" type="submit">Save settings</button>

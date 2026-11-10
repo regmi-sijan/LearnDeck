@@ -188,11 +188,11 @@ class Engine:
         if node["kind"] == "root":
             self._prepare_images(deck, node, llm)
         if llm.available:
-            node["provider"] = f"{llm.name}:{llm.model}"
             if node["kind"] == "root":
                 self._ai_overview(deck, node, llm)
             else:
                 self._ai_expand(deck, node, llm)
+            node["provider"] = llm.used_label()
         else:
             node["provider"] = "simple"
             self._simple_expand(deck, node)
@@ -242,8 +242,9 @@ class Engine:
                 text = llm.vision(img[0], img[1], VISION_PROMPT)
             except LLMError as e:
                 text = f"[Could not read this image: {e}]"
-            c["text"] = (c["text"] + "\n\n" + text).strip()
-            c["vision_done"] = True
+            base = "" if c["text"].startswith(("[Image-only content", "[Could not read")) else c["text"]
+            c["text"] = (base + "\n\n" + text).strip()
+            c["vision_done"] = not text.startswith("[Could not read")
         deck.save_doc()
         node["progress"] = "Thinking…"
 
@@ -283,26 +284,26 @@ class Engine:
         attrs = f'id="{c["id"]}"' + (f' loc="{c["loc"]}"' if c.get("loc") else "")
         return f'<chunk {attrs} title="{c["title"]}">\n{text}\n</chunk>'
 
-    def _context(self, deck: Deck, llm: BaseLLM, full_ok: bool) -> str:
-        """Stable document text that providers can cache between requests."""
+    def _context(self, deck: Deck, max_chars: int, full_ok: bool) -> str:
+        """Stable document text that providers can cache between requests, at most ~max_chars long."""
         meta = deck.meta
         order = [deck.chunks[i] for i in deck.doc["order"] if i in deck.chunks]
-        total = sum(len(c["text"]) for c in order)
+        total = sum(len(c["text"]) + 60 for c in order)
         head = f'<document title="{meta["title"]}" type="{KIND_LABEL.get(meta["kind"], meta["kind"])}">\n'
-        if full_ok and total <= llm.context_chars:
+        if full_ok and total <= max_chars:
             body = "\n".join(self._chunk_xml(c) for c in order)
             return head + body + "\n</document>"
         if full_ok:  # condensed: every chunk, proportionally shortened
-            budget = int(llm.context_chars * 0.9)
-            each = max(160, budget // max(1, len(order)))
+            budget = int(max_chars * 0.85)
+            each = max(120, budget // max(1, len(order)) - 80)
             body = "\n".join(self._chunk_xml(c, each) for c in order)
-            if len(body) > llm.context_chars:
-                body = body[: llm.context_chars] + "\n…[remaining chunks omitted]"
+            if len(body) > max_chars:
+                body = body[: max_chars] + "\n…[remaining chunks omitted]"
             return head + body + "\n</document>"
         # outline only: ids, locations and first lines (orientation for deep slides of big documents)
         lines = [f'{c["id"]} · {c.get("loc") or ""} · {c["title"]}' for c in order]
         body = "\n".join(lines)
-        cap = min(40_000, llm.context_chars // 3)
+        cap = min(40_000, max_chars // 3)
         if len(body) > cap:
             body = body[:cap] + "\n…"
         return head + "<outline>\n" + body + "\n</outline>\n</document>"
@@ -348,9 +349,14 @@ class Engine:
                 units.extend(self._split_passages(deck, c) if len(c["text"]) > config.PASSAGE_SPLIT_CHARS else [c])
         else:
             units = chunks
-        total = sum(len(u["text"]) for u in units) or 1
-        each = None if total <= limit else max(300, limit // max(1, len(units)))
-        return "\n".join(self._chunk_xml(u, each) for u in units), units
+        total = sum(len(u["text"]) + 80 for u in units) or 1
+        if total <= limit:
+            return "\n".join(self._chunk_xml(u) for u in units), units
+        each = max(150, limit // max(1, len(units)) - 80)
+        text = "\n".join(self._chunk_xml(u, each) for u in units)
+        if len(text) > limit:  # many small passages: keep the start of the list
+            text = text[:limit] + "\n…[more passages omitted]"
+        return text, units
 
     def _system(self, deck: Deck) -> str:
         return SYSTEM.format(level=LEVELS.get(deck.meta.get("level"), LEVELS["intermediate"]),
@@ -364,7 +370,7 @@ class Engine:
         prompt = OVERVIEW_PROMPT.format(kind=KIND_LABEL.get(kind, kind), hint=KIND_HINTS.get(kind, ""),
                                         n_topics=n_topics)
         node["progress"] = "Reading the whole document and planning the lesson…"
-        data = llm.json(system=self._system(deck), context=self._context(deck, llm, True), prompt=prompt,
+        data = llm.json(system=self._system(deck), build=lambda budget: (self._context(deck, budget, True), prompt),
                         schema=OVERVIEW_SCHEMA, max_tokens=4096)
         content = {
             "headline": str(data.get("headline", "")).strip(),
@@ -392,7 +398,7 @@ class Engine:
         sibs = [deck.node(s)["title"] for s in parent["children"] if s != node["id"] and deck.node(s)]
         siblings = f"Neighbouring regions covered on their own slides: {', '.join(sibs[:10])}\n" if sibs else ""
         node["progress"] = "Reading the relevant part…"
-        focus, units = self._focus(deck, node["sources"])
+        _, units = self._focus(deck, node["sources"])
         depth_left = config.MAX_DEPTH - node["depth"]
         if depth_left > 0:
             sub_rule = ("0-6 narrower regions INSIDE this region that deserve their own deeper slide (concepts, "
@@ -405,12 +411,17 @@ class Engine:
         if node.get("selection"):
             selection = ("On the previous slide the learner highlighted this passage and asked to go deeper:\n«"
                          + node["selection"][:1500] + "»\nMake this slide explain exactly that, in context.\n")
-        prompt = EXPAND_PROMPT.format(path=" › ".join(path), title=node["title"], summary=node["summary"] or "",
-                                      selection=selection, parent_brief=parent_brief[:800], siblings=siblings,
-                                      focus=focus, sub_rule=sub_rule)
+        def build(budget: int):
+            ctx = self._context(deck, budget, False)
+            room = max(3000, min(config.FOCUS_CHARS, budget - len(ctx) - 2500))
+            focus, _ = self._focus(deck, node["sources"], limit=room)
+            return ctx, EXPAND_PROMPT.format(path=" › ".join(path), title=node["title"],
+                                             summary=node["summary"] or "", selection=selection,
+                                             parent_brief=parent_brief[:800], siblings=siblings,
+                                             focus=focus, sub_rule=sub_rule)
+
         node["progress"] = "Writing the explanation…"
-        data = llm.json(system=self._system(deck), context=self._context(deck, llm, False), prompt=prompt,
-                        schema=EXPAND_SCHEMA, max_tokens=4096)
+        data = llm.json(system=self._system(deck), build=build, schema=EXPAND_SCHEMA, max_tokens=4096)
         check = data.get("check") if isinstance(data.get("check"), dict) else None
         if check and not str(check.get("question", "")).strip():
             check = None
@@ -498,13 +509,17 @@ class Engine:
         llm = get_llm()
         question = question.strip()[:2000]
         if llm.available:
-            focus, _ = self._focus(deck, node["sources"], limit=40_000)
             c = node.get("content") or {}
-            prompt = ASK_PROMPT.format(title=node["title"], path=" › ".join(self.breadcrumb(deck, nid)),
-                                       question=question, brief=(c.get("headline", "") + " "
-                                                                 + c.get("explanation", "")[:1500]), focus=focus)
-            answer = llm.text(system=self._system(deck), context=self._context(deck, llm, False), prompt=prompt,
-                              max_tokens=1200)
+            brief = c.get("headline", "") + " " + c.get("explanation", "")[:1500]
+
+            def build(budget: int):
+                ctx = self._context(deck, budget, False)
+                room = max(2500, min(40_000, budget - len(ctx) - len(brief) - 1500))
+                focus, _ = self._focus(deck, node["sources"], limit=room)
+                return ctx, ASK_PROMPT.format(title=node["title"], path=" › ".join(self.breadcrumb(deck, nid)),
+                                              question=question, brief=brief, focus=focus)
+
+            answer = llm.text(system=self._system(deck), build=build, max_tokens=1200)
         else:
             hits = _search(deck, node["sources"] or deck.doc["order"], question, 2)
             if hits:
